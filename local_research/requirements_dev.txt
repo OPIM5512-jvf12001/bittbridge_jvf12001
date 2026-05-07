@@ -1,0 +1,10 @@
+pandas
+numpy
+scikit-learn
+matplotlib
+supabase
+wandb
+optuna
+torch-directml
+optuna-dashboard
+seaborn

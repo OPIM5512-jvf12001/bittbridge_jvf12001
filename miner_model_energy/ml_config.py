@@ -26,6 +26,10 @@ FEATURE_BOOL_KEYS = (
     "use_load_lags",
     "use_load_rolling",
     "use_load_delta",
+    "use_holidays",
+    "use_heat_index",
+    "use_wind_chill",
+    "use_rolling_temp",
 )
 
 

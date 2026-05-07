@@ -815,7 +815,7 @@ class Miner(BaseMinerNeuron):
         super(Miner, self).__init__(config=config)
         self._add_test_noise = getattr(self.config, "test", False)
         self.model_config = load_model_config("model_params.yaml")
-        self.feature_cols = self.model_config.features.feature_cols
+        self.feature_cols = self.model_config.get('features', {}).get('feature_cols', [])
 
         bt.logging.info("Loading Custom LSTM Model")
         try:

@@ -814,10 +814,12 @@ class Miner(BaseMinerNeuron):
     def __init__(self, config=None, preflight_result: PreflightResult | None = None):
         super(Miner, self).__init__(config=config)
         self._add_test_noise = getattr(self.config, "test", False)
+        self.model_config = load_model_config("model_params.yaml")
+        self.feature_cols = self.model_config.get('features', {}).get('feature_cols', [])
 
         bt.logging.info("Loading Custom LSTM Model")
         try:
-            self.custom_model = tf.keras.models.load_model('best_model_artifacts/model.keras')
+            self.custom_model = tf.keras.models.load_model('best_model_artifacts/model.h5', compile=False)
             self.custom_scaler = joblib.load('best_model_artifacts/lstm_input_scaler.joblib')
             self.using_custom_lstm = True
             bt.logging.success("Model Loaded")
@@ -874,12 +876,12 @@ class Miner(BaseMinerNeuron):
         if self.using_custom_lstm:
             try:
                 context = self.predictor_router.predictor.get_context(synapse.timestamp)
-                if context_df.columns[0] != LSTM_FEATURES[0]:
-                    bt.logging.info(f"Auto-renaming {context_df.columns[0]} to {LSTM_FEATURES[0]}")
-                    context_df = context_df.rename(columns={context_df.columns[0]: LSTM_FEATURES[0]})
-                context_filtered = context[LSTM_FEATURES]
+                if context.columns[0] != self.feature_cols[0][0]:
+                    bt.logging.info(f"Auto-renaming {context.columns[0]} to {LSTM_FEATURES[0]}")
+                    context = context.rename(columns={context.columns[0]: LSTM_FEATURES[0]})
+                context_filtered = context[self.feature_cols]
                 
-                scaled_data = self.custom_scaler.transform(context)
+                scaled_data = self.custom_scaler.transform(context_filtered)
                 lstm_input = scaled_data.reshape((scaled_data.shape[0], 1, scaled_data.shape[1]))
             
                 prediction_raw = self.custom_model.predict(lstm_input, verbose=0)

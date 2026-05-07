@@ -78,5 +78,5 @@
     "lstm_n_steps": 1,
     "lstm_standardize_inputs": true,
     "lstm_scaler_path": "lstm_input_scaler.joblib",
-    "model_path": "model.keras"
+    "model_path": "model.h5"
 }

@@ -95,7 +95,7 @@ model.compile(optimizer=tf.keras.optimizers.Adam(0.0004893452546721716), loss='m
 model.fit(X_lstm, y_raw, epochs=50, batch_size=32, verbose=1)
 
 # Save the model file
-model_path = artifact_dir / "model.keras"
+model_path = artifact_dir / "model.h5"
 model.save(model_path)
 
 # Create manifest
@@ -105,7 +105,7 @@ manifest = {
     "lstm_n_steps": 1,
     "lstm_standardize_inputs": True,
     "lstm_scaler_path": "lstm_input_scaler.joblib",
-    "model_path": "model.keras"
+    "model_path": "model.h5"
 }
 
 

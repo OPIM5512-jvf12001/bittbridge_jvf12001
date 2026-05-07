@@ -838,6 +838,7 @@ class Miner(BaseMinerNeuron):
         except Exception as e:
             bt.logging.error(f"Failed to load custom LSTM: {e}")
             self.using_custom_lstm = False
+            
 
         self.predictor_router = PredictorRouter(AdvancedModelPredictor(self.config.miner.model_params_path))
         deployed_mode = "baseline"
@@ -876,6 +877,10 @@ class Miner(BaseMinerNeuron):
         bt.logging.success(
             f"Miner deployed and ready to answer validator requests. Active model mode: {deployed_mode}"
         )
+        
+        if self.using_custom_lstm:
+            self.predictor_router.set_mode("custom")
+            bt.logging.success("OVERRIDE: Router set to CUSTOM mode to use loaded LSTM.")
 
     async def forward(self, synapse: bittbridge.protocol.Challenge) -> bittbridge.protocol.Challenge:
         caller_hotkey = synapse.dendrite.hotkey if synapse.dendrite else "Unknown"

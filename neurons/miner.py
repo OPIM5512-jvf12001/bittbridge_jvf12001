@@ -877,10 +877,10 @@ class Miner(BaseMinerNeuron):
         bt.logging.success(
             f"Miner deployed and ready to answer validator requests. Active model mode: {deployed_mode}"
         )
-        
+
         if self.using_custom_lstm:
-            self.predictor_router.set_mode("custom")
-            bt.logging.success("OVERRIDE: Router set to CUSTOM mode to use loaded LSTM.")
+            self.predictor_router.set_predictor(self.predictor_router.predictor, mode="custom")
+            bt.logging.success("OVERRIDE: Router successfully forced to 'custom' mode.")
 
     async def forward(self, synapse: bittbridge.protocol.Challenge) -> bittbridge.protocol.Challenge:
         caller_hotkey = synapse.dendrite.hotkey if synapse.dendrite else "Unknown"

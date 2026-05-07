@@ -879,8 +879,9 @@ class Miner(BaseMinerNeuron):
         )
 
         if self.using_custom_lstm:
-            self.predictor_router.set_predictor(self.predictor_router.predictor, mode="custom")
-            bt.logging.success("OVERRIDE: Router successfully forced to 'custom' mode.")
+            # Using the private _predictor attribute as suggested by the error
+            self.predictor_router.set_predictor(self.predictor_router._predictor, mode="custom")
+            bt.logging.success("OVERRIDE: Router successfully forced to 'custom' mode using _predictor.")
 
     async def forward(self, synapse: bittbridge.protocol.Challenge) -> bittbridge.protocol.Challenge:
         caller_hotkey = synapse.dendrite.hotkey if synapse.dendrite else "Unknown"

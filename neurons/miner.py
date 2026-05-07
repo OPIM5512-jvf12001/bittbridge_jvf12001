@@ -823,10 +823,14 @@ class Miner(BaseMinerNeuron):
 
         bt.logging.info("Loading Custom LSTM Model")
         try:
+            custom_objects = {
+                'LSTM': lambda **kwargs: tf.keras.layers.LSTM(**{k: v for k, v in kwargs.items() if k != 'time_major'})
+            }
+            
             self.custom_model = tf.keras.models.load_model(
                 'best_model_artifacts/model.h5', 
-                compile=False,
-                custom_objects={'time_major': False} 
+                compile=False, 
+                custom_objects=custom_objects
             )
             self.custom_scaler = joblib.load('best_model_artifacts/lstm_input_scaler.joblib')
             self.using_custom_lstm = True

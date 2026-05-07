@@ -9,6 +9,9 @@ import typing
 import bittensor as bt
 import numpy as np
 import pandas as pd
+import tensorflow as tf
+import joblib
+import os
 
 # Bittensor Miner Template:
 import bittbridge
@@ -47,6 +50,26 @@ from miner_model_energy.storage_train_io import (
     storage_cache_exists,
     storage_cache_last_updated_label,
 )
+
+LSTM_FEATURES = [
+    'LoadMw', 'BDL-drct', 'BDL-dwpf', 'BDL-relh', 'BDL-sped', 'BDL-tmpf', 
+    'HFD-drct', 'HFD-dwpf', 'HFD-relh', 'HFD-sped', 'HFD-tmpf', 'HVN-drct', 
+    'HVN-dwpf', 'HVN-relh', 'HVN-sped', 'HVN-tmpf', 'hour', 'minute', 
+    'dayofweek', 'month', 'hour_sin', 'hour_cos', 'minute_of_day_sin', 
+    'minute_of_day_cos', 'month_sin', 'month_cos', 'day_of_year_sin', 
+    'day_of_year_cos', 'tmpf_mean', 'tmpf_std', 'tmpf_min', 'tmpf_max', 
+    'relh_mean', 'relh_std', 'sped_mean', 'sped_std', 'sped_max', 
+    'BDL_temp_dew_gap', 'HFD_temp_dew_gap', 'HVN_temp_dew_gap', 
+    'temp_dew_gap_mean', 'temp_dew_gap_std', 'load_lag_12', 'load_lag_72', 
+    'load_lag_288', 'load_roll_mean_12', 'load_roll_std_12', 'load_roll_min_12', 
+    'load_roll_max_12', 'load_roll_mean_36', 'load_roll_std_36', 'load_roll_min_36', 
+    'load_roll_max_36', 'load_roll_mean_72', 'load_roll_std_72', 'load_roll_min_72', 
+    'load_roll_max_72', 'load_roll_mean_288', 'load_roll_std_288', 
+    'load_roll_min_288', 'load_roll_max_288', 'load_delta_1', 'load_delta_3', 
+    'load_delta_12', 'is_holiday', 'BDL_hi', 'HVN_hi', 'HFD_hi', 
+    'BDL_wind_chill', 'HVN_wind_chill', 'HFD_wind_chill', 
+    'BDL_temp_roll_24h', 'HVN_temp_roll_24h', 'HFD_temp_roll_24h'
+]
 
 # ---------------------------
 # Miner Forward Logic for New England Energy Demand (LoadMw) Prediction
@@ -791,7 +814,18 @@ class Miner(BaseMinerNeuron):
     def __init__(self, config=None, preflight_result: PreflightResult | None = None):
         super(Miner, self).__init__(config=config)
         self._add_test_noise = getattr(self.config, "test", False)
-        self.predictor_router = PredictorRouter(BaselineMovingAveragePredictor(N_STEPS))
+
+        bt.logging.info("Loading Custom LSTM Model")
+        try:
+            self.custom_model = tf.keras.models.load_model('best_model_artifacts/model.keras')
+            self.custom_scaler = joblib.load('best_model_artifacts/lstm_input_scaler.joblib')
+            self.using_custom_lstm = True
+            bt.logging.success("Model Loaded")
+        except Exception as e:
+            bt.logging.error(f"Failed to load custom LSTM: {e}")
+            self.using_custom_lstm = False
+
+        self.predictor_router = PredictorRouter(AdvancedModelPredictor(self.config.miner.model_params_path))
         deployed_mode = "baseline"
         if preflight_result and preflight_result.custom_plugin is not None:
             cp = preflight_result.custom_plugin
@@ -830,47 +864,51 @@ class Miner(BaseMinerNeuron):
         )
 
     async def forward(self, synapse: bittbridge.protocol.Challenge) -> bittbridge.protocol.Challenge:
-        """
-        Responds to the Challenge synapse from the validator with a LoadMw point prediction
-        (moving average of recent 5-min system load).
-        """
-        caller_hotkey = None
-        if synapse.dendrite is not None:
-            caller_hotkey = synapse.dendrite.hotkey
-        bt.logging.info(
-            f"Received validator prediction request: hotkey={caller_hotkey}, "
-            f"timestamp={synapse.timestamp}, model_mode={self.predictor_router.mode}"
-        )
+        caller_hotkey = synapse.dendrite.hotkey if synapse.dendrite else "Unknown"
+        bt.logging.info(f"Request from: {caller_hotkey} for {synapse.timestamp}")   
 
-        prediction = self.predictor_router.predict(synapse.timestamp)
+        prediction = None
+        # This keeps track of which model actually answered
+        mode_label = self.predictor_router.mode
+
+        if self.using_custom_lstm:
+            try:
+                context = self.predictor_router.predictor.get_context(synapse.timestamp)
+                if context_df.columns[0] != LSTM_FEATURES[0]:
+                    bt.logging.info(f"Auto-renaming {context_df.columns[0]} to {LSTM_FEATURES[0]}")
+                    context_df = context_df.rename(columns={context_df.columns[0]: LSTM_FEATURES[0]})
+                context_filtered = context[LSTM_FEATURES]
+                
+                scaled_data = self.custom_scaler.transform(context)
+                lstm_input = scaled_data.reshape((scaled_data.shape[0], 1, scaled_data.shape[1]))
+            
+                prediction_raw = self.custom_model.predict(lstm_input, verbose=0)
+                prediction = float(prediction_raw[0][0])
+                
+                mode_label = "CUSTOM_LSTM_2.91"
+            except Exception as e:
+                bt.logging.error(f"LSTM Error: {e}. Falling back to baseline.")
+
+        # Fallback to baseline only if LSTM failed
         if prediction is None:
-            return synapse
+            prediction = self.predictor_router.predict(synapse.timestamp)
+            mode_label = self.predictor_router.mode
 
-        # Step 3: [Testing only] Add noise scaled to load
-        if self._add_test_noise:
+        # Step 3: Add noise ONLY ONCE if enabled
+        if prediction is not None and self._add_test_noise:
             prediction += random.uniform(-50, 50)
 
-        # Step 4: Assign point prediction
+        # Step 4: Assign prediction to the synapse
         synapse.prediction = prediction
 
-        # Step 5: Log successful prediction
-        if self._add_test_noise:
-            bt.logging.success(
-                f"Predicting LoadMw for timestamp={synapse.timestamp}: "
-                f"{prediction:.1f} (with noise)"
-            )
-        else:
-            bt.logging.success(
-                f"[{self.predictor_router.mode}] Predicting LoadMw for timestamp={synapse.timestamp}: {prediction:.1f}"
-            )
+        # Step 5: Log the SUCCESS
         bt.logging.success(
-            f"Prediction request input: hotkey={caller_hotkey}, timestamp={synapse.timestamp}, "
-            f"model_mode={self.predictor_router.mode}, prediction={prediction:.1f}"
+            f"[{mode_label}] Predicting LoadMw: {prediction:.1f}"
         )
         bt.logging.success(
-            "Prediction model input context: "
-            + json.dumps(self.predictor_router.last_prediction_context, default=str, ensure_ascii=True)
+            "Input Context used: " + json.dumps(self.predictor_router.last_prediction_context, default=str)
         )
+        
         return synapse
 
     async def blacklist(self, synapse: bittbridge.protocol.Challenge) -> typing.Tuple[bool, str]:

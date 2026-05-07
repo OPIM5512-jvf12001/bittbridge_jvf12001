@@ -167,3 +167,4 @@ testing/
 
 # Large files
 miner_model_energy/cache/train_merged.csv
+local_research/data/training_data.csv

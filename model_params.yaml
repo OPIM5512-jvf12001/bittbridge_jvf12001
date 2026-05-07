@@ -47,6 +47,81 @@ features:
 
   use_wind_chill: true
 
+  - Total Load
+  - BDL-drct
+  - BDL-dwpf
+  - BDL-relh
+  - BDL-sped
+  - BDL-tmpf
+  - HFD-drct
+  - HFD-dwpf
+  - HFD-relh
+  - HFD-sped
+  - HFD-tmpf
+  - HVN-drct
+  - HVN-dwpf
+  - HVN-relh
+  - HVN-sped
+  - HVN-tmpf
+  - hour
+  - minute
+  - dayofweek
+  - month
+  - hour_sin
+  - hour_cos
+  - minute_of_day_sin
+  - minute_of_day_cos
+  - month_sin
+  - month_cos
+  - day_of_year_sin
+  - day_of_year_cos
+  - tmpf_mean
+  - tmpf_std
+  - tmpf_min
+  - tmpf_max
+  - relh_mean
+  - relh_std
+  - sped_mean
+  - sped_std
+  - sped_max
+  - BDL_temp_dew_gap
+  - HFD_temp_dew_gap
+  - HVN_temp_dew_gap
+  - temp_dew_gap_mean
+  - temp_dew_gap_std
+  - load_lag_12
+  - load_lag_72
+  - load_lag_288
+  - load_roll_mean_12
+  - load_roll_std_12
+  - load_roll_min_12
+  - load_roll_max_12
+  - load_roll_mean_36
+  - load_roll_std_36
+  - load_roll_min_36
+  - load_roll_max_36
+  - load_roll_mean_72
+  - load_roll_std_72
+  - load_roll_min_72
+  - load_roll_max_72
+  - load_roll_mean_288
+  - load_roll_std_288
+  - load_roll_min_288
+  - load_roll_max_288
+  - load_delta_1
+  - load_delta_3
+  - load_delta_12
+  - is_holiday
+  - BDL_hi
+  - HVN_hi
+  - HFD_hi
+  - BDL_wind_chill
+  - HVN_wind_chill
+  - HFD_wind_chill
+  - BDL_temp_roll_24h
+  - HVN_temp_roll_24h
+  - HFD_temp_roll_24h
+
 # validation_split: last fraction of time-ordered train used for metrics; random_state seeds CART / RNN / LSTM.
 # show_training_progress: phased [train] logs + timings; linear/cart have no intra-fit bar (sklearn).
 training:

@@ -1,0 +1,16 @@
+[project]
+name = "bittbridge-jvf12001"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10.12"
+dependencies = [
+    "holidays>=0.96",
+]
+[tool.setuptools]
+
+packages = ["miner_model_energy"]
+
+[tool.setuptools.package-dir]
+
+"miner_model_energy" = "miner_model_energy"

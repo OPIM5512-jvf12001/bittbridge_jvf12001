@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
+import holidays
 
 from .data_io import TARGET_COLUMN, TARGET_COLUMN_HORIZON, TIMESTAMP_COLUMN
 
@@ -69,6 +70,24 @@ def filter_weather_suffix_columns(
         return df
     return df.drop(columns=to_drop)
 
+# Adding ability to remove certain stations, I only want to look at HFD, BDL and HVN
+def filter_weather_stations(frame: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """Removes weather columns that aren't in the allowed station list."""
+    allowed_stations = config.get("include_weather_stations", [])
+    
+    if not allowed_stations:
+        return frame
+        
+    
+    weather_cols = [c for c in frame.columns if '-' in c]
+    
+    cols_to_drop = [
+        c for c in weather_cols 
+        if not any(c.startswith(station) for station in allowed_stations)
+    ]
+    
+    return frame.drop(columns=cols_to_drop)
+
 
 def _weather_column_groups(columns: Sequence[str]) -> Tuple[List[str], ...]:
     cols = [str(c) for c in columns]
@@ -90,6 +109,100 @@ def _row_std_across_stations(frame: pd.DataFrame) -> pd.Series:
     return frame.std(axis=1, ddof=0)
 
 
+######################### Cleared Space for New Features ###########################################
+
+# Federal holidays may impact power demand in the same way a weekend might
+def add_holiday_flag(frame: pd.DataFrame) -> pd.DataFrame:
+
+    # Adds a binary flag for US Federal Holidays using the holidays library
+    us_holidays = holidays.US()
+
+    frame['is_holiday'] = frame['dt'].dt.date.apply(
+        lambda x: 1 if x in us_holidays else 0
+    ).astype(int)
+
+    return frame
+
+# The combination of heat and humidity forms the heat index or "wet bulb temperature". Hight heat feels different with high humidity
+# and rapidly becomes dangerous
+def add_per_station_heat_index(frame: pd.DataFrame, config: dict) -> pd.DataFrame:
+    allowed_stations = config.get("include_weather_stations", [])
+    
+    for st in allowed_stations:
+        t_col, r_col = f'{st}-tmpf', f'{st}-relh'
+
+        if t_col in frame.columns and r_col in frame.columns:
+            T = frame[t_col]
+            RH = frame[r_col]
+            hi_col = f'{st}_hi'
+            
+            # The formula for the heat index depends on the temperature, 80F is when a different formula needs to be used.
+            frame[hi_col] = 0.5 * (T + 61.0 + ((T - 68.0) * 1.2) + (RH * 0.094))
+
+            mask = frame[hi_col] >= 80
+            if mask.any():
+                Tm, RHm = T[mask], RH[mask]
+                # Rothfusz Regression
+                frame.loc[mask, hi_col] = (
+                    -42.379 + 2.04901523*Tm + 10.14333127*RHm - 0.22475541*Tm*RHm 
+                    - 0.00683783*Tm**2 - 0.05481717*RHm**2 + 0.00122874*Tm**2*RHm 
+                    + 0.00085282*Tm*RHm**2 - 0.00000199*Tm**2*RHm**2
+                )
+    return frame
+
+
+# Wind chill is the cold weather companion to Heat Index
+def add_wind_chill(frame: pd.DataFrame, config: dict) -> pd.DataFrame:
+    allowed_stations = config.get("include_weather_stations", [])
+    
+    for st in allowed_stations:
+        t_col = f'{st}-tmpf'
+        w_col = f'{st}-sped' 
+        
+        if t_col in frame.columns and w_col in frame.columns:
+            T = frame[t_col]
+            V = frame[w_col]
+            
+            # Wind Chill is only valid for temps <= 50F and wind > 3mph
+            v_pow = V**0.16
+            wc = 35.74 + (0.6215 * T) - (35.75 * v_pow) + (0.4275 * T * v_pow)
+            
+            frame[f'{st}_wind_chill'] = T
+            mask = (T <= 50) & (V > 3)
+            frame.loc[mask, f'{st}_wind_chill'] = wc[mask]
+            
+    return frame
+
+
+
+# Add rolling 24 hour temperature. Buildings can retain heat from previous hot periods that can impact AC usage.
+def add_rolling_temp(frame: pd.DataFrame, config: dict) -> pd.DataFrame:
+    allowed_stations = config.get("include_weather_stations", [])
+    
+    for st in allowed_stations:
+        t_col = f'{st}-tmpf'
+        if t_col in frame.columns:
+            
+            frame[f'{st}_temp_roll_24h'] = frame[t_col].rolling(window=24, min_periods=1).mean()
+            
+    return frame
+
+
+
+
+
+
+
+
+
+
+
+
+
+####################################################################################################
+
+
+
 def add_engineered_features(
     df: pd.DataFrame,
     feature_cfg: Dict,
@@ -99,8 +212,10 @@ def add_engineered_features(
     Feature families mirror manual notebook setup.
     All groups are gated by feature_cfg booleans (defaults are False in YAML).
     """
+
     out = df.copy()
     ts = timestamp_source if timestamp_source is not None else out[TIMESTAMP_COLUMN]
+    out = filter_weather_stations(out, feature_cfg)
 
     if feature_cfg.get("use_time_features", False):
         out["hour"] = ts.dt.hour
@@ -114,6 +229,14 @@ def add_engineered_features(
         minute_of_day = ts.dt.hour * 60 + ts.dt.minute
         out["minute_of_day_sin"] = np.sin(2 * np.pi * minute_of_day / 1440.0)
         out["minute_of_day_cos"] = np.cos(2 * np.pi * minute_of_day / 1440.0)
+
+        # Add Month Cyclical Features
+        out["month_sin"] = np.sin(2 * np.pi * ts.dt.month / 12.0)
+        out["month_cos"] = np.cos(2 * np.pi * ts.dt.month / 12.0)
+        
+        # Add Day of Year Cyclical
+        out["day_of_year_sin"] = np.sin(2 * np.pi * ts.dt.dayofyear / 366.0)
+        out["day_of_year_cos"] = np.cos(2 * np.pi * ts.dt.dayofyear / 366.0)
 
     tmpf_cols, dwpf_cols, relh_cols, sped_cols, _drct_cols = _weather_column_groups(out.columns)
 
@@ -167,6 +290,19 @@ def add_engineered_features(
         elif feature_cfg.get("use_load_delta", False):
             out["load_delta_1"] = out[TARGET_COLUMN].shift(1) - out[TARGET_COLUMN].shift(2)
             out["load_delta_12"] = out[TARGET_COLUMN].shift(1) - out[TARGET_COLUMN].shift(13)
+
+    if feature_cfg.get("use_holidays", False):
+        out = add_holiday_flag(out)
+
+    if feature_cfg.get("use_heat_index", False):
+        out = add_per_station_heat_index(out, feature_cfg)
+
+    if feature_cfg.get("use_wind_chill", False):
+        out = add_wind_chill(out, feature_cfg)
+        
+    if feature_cfg.get("use_rolling_temp", False):
+        out = add_rolling_temp(out, feature_cfg)
+    
 
     _drop_features_disabled_by_config(out, feature_cfg)
     return out

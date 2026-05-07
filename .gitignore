@@ -163,3 +163,7 @@ testing/
 
 # Editors
 .vscode/settings.json
+
+
+# Large files
+miner_model_energy/cache/train_merged.csv
